@@ -1,0 +1,139 @@
+
+# IMDb
+
+IMDb is an online database of information related to films, television series, home videos, video games, and streaming content online – including rating, plot summaries,critical reviews.
+
+### In this Case Study ImDb website is Web-Scraped and further Analysis are performed with Data
+
+## Loading packages
+
+For Checking website scraping permissions
+```{r}
+library(robotstxt) 
+```
+
+For scraping the data
+```{r}
+library(rvest)
+library(xml2)
+```
+
+For cleaning and Analysis
+```{r}
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+```
+
+## Checking Website Scraping Permissions
+```{r}
+paths_allowed("https://www.imdb.com/search/title/?title_type=feature,tv_movie,tv_series,documentary&num_votes=1000")
+```
+
+##  Data extraction from IMDb website for top 1000 movies
+
+```{r}
+Movie_Data <- tibble()
+```
+
+The movies data will mainly include, Movies Rank, Title, Rating, Number of Votes, gross profit and year of release.
+
+```{r warning=FALSE}
+for(page in seq (from=1, to = 1000, by=50)) {
+  web <- paste("https://www.imdb.com/search/title/?release_date=2018-01-01,2018-12-31&start=",toString(page),"&ref_=adv_nxt",sep="")    
+  website <- read_html(web)
+  
+  Rank_Data <- html_nodes(website,'.text-primary')
+  Movie_Rank_Data <- html_text(Rank_Data)
+  Movie_Rank_Data <- as.numeric(Movie_Rank_Data)
+  
+  title_Data <- html_nodes(website,".lister-item-header a")
+  Movie_title_Data <- html_text(title_Data)
+  
+  year_Data <- html_nodes(website,".lister-item-year")
+  Movie_year_Data <- html_text(year_Data)
+  
+  genre_Data <- html_nodes(website,".genre")
+  Movie_genre_Data <- html_text(genre_Data)
+  Movie_genre_Data <- gsub("\n","",Movie_genre_Data)
+  Movie_genre_Data <- gsub(" ","",Movie_genre_Data)
+  Movie_genre_Data <- gsub(",.*","",Movie_genre_Data)
+  Movie_genre_Data <- as.factor(Movie_genre_Data)
+  
+  rating_Data <- html_nodes(website,".ratings-imdb-rating strong")
+  Movie_rating_Data <- html_text(rating_Data)
+  Movie_rating_Data <- as.numeric(Movie_rating_Data)
+  
+  gross_votes_Data <- html_nodes(website,".sort-num_votes-visible")
+  Movie_gross_votes_Data <- html_text(gross_votes_Data)
+  
+  Data <- tibble(Rank = Movie_Rank_Data, Title= Movie_title_Data,Genre= Movie_genre_Data, Rating= Movie_rating_Data,Year_ = Movie_year_Data, Gross_Votes = Movie_gross_votes_Data)
+  Movie_Data <- bind_rows(Movie_Data,Data)
+}
+```
+
+
+## Data Cleaning and Processing
+
+```{r}
+head(Movie_Data)
+```
+
+
+Extracting the year from character string
+
+```{r}
+Year <- regmatches(Movie_Data$Year_,regexpr("2018",Movie_Data$Year_))
+Year <- as.numeric(Year)
+Movie_Data <- cbind(Year,Movie_Data)
+Movie_Data$Year_=NULL
+```
+
+Separating the Gross and number of Votes in movies data from the character string
+
+```{r warning=FALSE}
+Movie_Data <- separate(data= Movie_Data, col = Gross_Votes ,into = c("R1","R2","Votes","R3","Gross"),sep= "\n")
+Movie_Data$R1 = NULL
+Movie_Data$R2 = NULL
+Movie_Data$R3 = NULL
+
+Movie_Data$Votes <- trimws(Movie_Data$Votes,whitespace = "[ \t\r]")
+Movie_Data$Votes <- gsub(",","",Movie_Data$Votes)
+Movie_Data$Votes <- as.numeric(Movie_Data$Votes)
+
+Movie_Data$Gross <- trimws(Movie_Data$Gross,whitespace = "[ \t\r]")
+Movie_Data$Gross <- substr(Movie_Data$Gross,2,regexpr("M",Movie_Data$Gross))
+Movie_Data$Gross <- gsub("M","",Movie_Data$Gross)
+Movie_Data$Gross <- gsub("$ ","",Movie_Data$Gross)
+Movie_Data$Gross <- as.numeric(Movie_Data$Gross)
+Movie_Data$Gross <- Movie_Data$Gross*1000000
+```
+
+```{r}
+head(Movie_Data)
+```
+
+## Visualization
+
+```{r warning=FALSE}
+Movie_Data_G <- Movie_Data %>% select(Genre, Votes,Rating) %>% group_by(Genre) %>% summarise(Total_Votes = sum(Votes),Avg_Rating = mean(Rating))
+```
+
+### Average Rating for Different Genre
+
+```{r}
+ggplot(data = Movie_Data_G)+ geom_bar(mapping = aes(x = Genre,y =Avg_Rating),stat='identity',fill="#30D5C8")+
+geom_line(aes(x = Genre,y =Avg_Rating, group=1),color="red",size=1.5)+
+theme(axis.text.x = element_text(angle= 45),axis.text.y = element_text(angle= 45))+
+labs(title = "Average Rating for Different Genre")
+```
+
+### Movie share based on votes for Different Genre
+
+```{r warning=FALSE}
+ggplot(data = Movie_Data_G)+ geom_bar(aes(x="",y =Total_Votes,fill=Genre),stat='identity')+
+coord_polar("y", start=0)  +scale_fill_brewer(palette="Dark2")+
+labs(title = "Movie Genre having maximum votes share", subtitle = "Top 3 Genre are ACTION,COMEDY,DRAMA")
+```
+
